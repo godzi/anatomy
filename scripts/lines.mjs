@@ -6,7 +6,7 @@ const argv = process.argv.slice(2);
 if (!argv.length || argv.includes("--help") || argv.includes("-h")) {
   console.log(`Check that every texture line in a figure ends on something.
 
-  node lines.mjs <file.html | url> [--out marks.png] [--tolerance 1] [--select css] [--wait 1500] [drive.mjs flags]
+  node lines.mjs <file.html> [--out marks.png] [--tolerance 1] [--select css] [--wait 1500] [drive.mjs flags]
 
 Every open subpath of every .iso-line (seams, grooves, ribs, rule lines, ticks, needles) must end on another stroke,
 a dot or an outline within the tolerance (viewBox px), or under a fill painted after it. A short straight mark (a tick)

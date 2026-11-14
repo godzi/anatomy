@@ -4,7 +4,6 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 
 if (typeof WebSocket === "undefined" && !process.execArgv.includes("--experimental-websocket")) {
   const child = spawn(process.execPath, ["--experimental-websocket", ...process.argv.slice(1)], { stdio: "inherit" });
@@ -145,9 +144,9 @@ async function main() {
     const problems = [];
     let loaded = () => {};
     let policyEvent = async () => {};
-  socket.onmessage = (message) => {
+    socket.onmessage = (message) => {
       const data = JSON.parse(message.data);
-    policyEvent(data).catch((error) => { console.error(error.message); chrome.kill("SIGKILL"); local.close(); process.exit(1); });
+      policyEvent(data).catch((error) => { console.error(error.message); finish(1); });
       if (data.method === "Page.loadEventFired") loaded();
       if (data.id && pending.has(data.id)) {
         pending.get(data.id)(data);
@@ -177,7 +176,7 @@ async function main() {
     const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
     await send("Runtime.enable");
     await send("Page.enable");
-  await restrictPage(send, (handler) => { policyEvent = handler; }, url);
+    await restrictPage(send, (handler) => { policyEvent = handler; }, url);
     const features = [];
     if (options.reduced) features.push({ name: "prefers-reduced-motion", value: "reduce" });
     if (options.theme) features.push({ name: "prefers-color-scheme", value: options.theme });
