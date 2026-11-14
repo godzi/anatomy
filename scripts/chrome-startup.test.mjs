@@ -14,6 +14,7 @@ for (const name of ["capture", "drive", "turn-check"]) {
     const directory = await mkdtemp(join(tmpdir(), "anatomy-chrome-startup-"));
     let profile;
     try {
+      await writeFile(join(directory, "figure.html"), "<!doctype html><p>Figure</p>");
       const binary = join(directory, "chrome");
       const receipt = join(directory, "profile.txt");
       await writeFile(binary, '#!/bin/sh\nfor arg in "$@"; do\n  case "$arg" in --user-data-dir=*) printf "%s" "${arg#--user-data-dir=}" > "$ANATOMY_PROFILE_RECEIPT";; esac\ndone\nexit 7\n');

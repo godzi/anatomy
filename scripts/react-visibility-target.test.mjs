@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -18,7 +19,7 @@ function Probe({mode}){const ref=useRef(null);const [phase,setPhase]=useState(fa
 for(const mode of ['swap','late','healthy','moved','strict'])flushSync(()=>createRoot(document.getElementById(mode)).render(mode==='strict'?React.createElement(StrictMode,null,React.createElement(Probe,{mode})):React.createElement(Probe,{mode})));setTimeout(()=>{window.visibilityObserved=Object.fromEntries(['swap','late','healthy','moved','strict'].map(mode=>[mode,{visible:document.querySelector('#probe-'+mode).dataset.visible,phase:document.querySelector('#probe-'+mode).dataset.phase,top:document.querySelector('[data-target="'+mode+'"]').getBoundingClientRect().top}]))},700);`;
   await build({ stdin: { contents: entry, resolveDir: process.cwd(), loader: "jsx" }, bundle: true, outfile: join(directory,"fixture.js"), platform: "browser", nodePaths, alias });
   const page = join(directory,"figure.html");
-  await writeFile(page,'<!doctype html><div class="iso-plate"><div id="swap"></div><div id="late"></div><div id="healthy"></div><div id="moved"></div><div id="strict"></div></div><script src="fixture.js"></script>');
+  await writeFile(page,'<!doctype html><div class="iso-plate"><div id="swap"></div><div id="late"></div><div id="healthy"></div><div id="moved"></div><div id="strict"></div></div><script>' + readFileSync(join(directory, 'fixture.js'), 'utf8') + '</script>');
   const result = await promisify(execFile)(process.execPath,["scripts/drive.mjs",page,JSON.stringify([["eval","window.visibilityObserved"]])],{timeout:30000});
   const payload = result.stdout.match(/eval: (.*)/);
   assert.ok(payload, result.stdout);

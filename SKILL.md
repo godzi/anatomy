@@ -1,13 +1,22 @@
 ---
 name: anatomy
-description: Build crafted, highly detailed, interactive isometric SVG figures that explain a technical idea as a real physical object (a test rig, a dial gauge, a cabinet of drawers, a plotter, a lock), with many small precise solid parts, four-tone shading, correct painter's order, a framed card with title, hint and live readout, and calm eased motion. Use this whenever someone wants an isometric illustration, an explanatory diagram or figure for docs, a blog post, a landing page or an article, a "Linear-style" or "premium" technical drawing, an interactive explainer, or an SVG that shows how a system, algorithm or component works, even if they never say "isometric". Works framework-free (TypeScript/JS that writes SVG and HTML) and in React/Next.js, and can add realistic WebGL shaders (fire, exhaust, water, caustics, lamp light) that live inside the drawing in the same isometric perspective. Also prints a figure as an A4 PDF (poster, drawing or handout) and publishes it to the Anatomy community gallery when asked.
+description: Build crafted, highly detailed, interactive isometric SVG figures that explain a technical idea as a real physical object (a test rig, a dial gauge, a cabinet of drawers, a plotter, a lock), with many small precise solid parts, four-tone shading, correct painter's order, a framed card with title, hint and live readout, and calm eased motion. Use this whenever someone wants an isometric illustration, an explanatory diagram or figure for docs, a blog post, a landing page or an article, a "Linear-style" or "premium" technical drawing, an interactive explainer, or an SVG that shows how a system, algorithm or component works, even if they never say "isometric". Works framework-free (TypeScript/JS that writes SVG and HTML) and in React/Next.js, and can add realistic WebGL shaders (fire, exhaust, water, caustics, lamp light) that live inside the drawing in the same isometric perspective. Also prints a figure as an A4 PDF (poster, drawing or handout).
 license: MIT
-compatibility: Written for Claude Code; also runs in Antigravity, OpenCode, Codex and MiniMax Code. Needs Node.js 20.10+, and Chrome or Chromium for the checks.
+compatibility: Local-only fork for Codex; standard Agent Skills format. Needs Node.js 20.10+, and Chrome or Chromium for the checks.
 metadata:
   opencode/slash: "true"
 ---
 
 # Anatomy
+
+## Local security contract
+
+- Work only in the user-selected project/output directory. Never inspect agent session logs, credentials, unrelated home directories or environment secrets.
+- Build standalone HTML/SVG with inline assets. Browser checks accept local files only, serve exactly that file over temporary loopback HTTP, and block other page requests. Linked assets and remote development servers are intentionally unsupported.
+- Keep Chrome sandboxing enabled. If Chrome cannot start, report the failed check; never add sandbox-disabling flags or ask for blanket filesystem/network access to make it pass.
+- Node build scripts, sheet modules and driver actions are executable code: inspect them before running; run untrusted inputs only inside a separate OS container/VM with no secrets and no network. This skill is not an OS security boundary.
+- No automatic publication, GitHub authentication, session usage accounting or package installation. Share only explicitly reviewed output files in a separately authorized workflow.
+
 
 This skill makes figures like a small instrument on a bench: a heavy base on feet, rails with tick rulers, a carriage on bushings, knurled knobs, coil springs, a dial gauge whose needle moves, screws as tiny dots. The reader understands the idea because they recognise the machine. Every number the figure shows comes from the same model that moves its parts.
 
@@ -182,4 +191,4 @@ Read these as you need them:
 - `references/walkthrough.md`: how the test rig was designed, step by step, from concept to code.
 - `references/3d.md`: the optional 3D mode: groups and poses, live layers, convex parts and their rules, materials, free groups, hinge chains, painter's order, static clutter around a turntable, shaders that follow the turn, the orbit audit, browser checks, performance and limits.
 - `references/print.md`: printable A4 or Letter sheets from a built figure: the three formats, the `sheet.mjs` spec (poses, parts as selectors, focus, hide, crops, rasters for WebGL) and how to check the PDF.
-- `references/publish.md`: sharing a finished figure in the community gallery with `scripts/publish.mjs`, only when the user asks; nothing is pushed for them.
+- `references/publish.md`: explains why automatic publication is unavailable in this local-only fork.

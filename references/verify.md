@@ -1,3 +1,5 @@
+> Local fork: use only standalone HTML/SVG with inline assets. Remote/dev-server URLs and adjacent files are blocked; do not disable sandboxing to run checks.
+
 # Verify
 
 Look at the figure the way a demanding reviewer would, before anyone else does. Rendering it is cheap, and guessing is expensive.
@@ -13,7 +15,7 @@ node scripts/capture.mjs page.html --out shots/tour.png --times 1200,2400,3600  
 node scripts/capture.mjs page.html --out shots/keys.png --key ArrowRight,ArrowRight
 node scripts/capture.mjs page.html --out shots/joint.png --zoom 200,80,220,170  # close-up at 4x, in card px
 node scripts/capture.mjs page.html --out shots/still.png --reduced              # reduced motion
-node scripts/capture.mjs http://localhost:3000/docs --select "figure:nth-of-type(3) .iso-plate"   # one figure on a dev-server page
+node scripts/capture.mjs standalone.html --select "figure:nth-of-type(3) .iso-plate"   # bundled local page only
 ```
 `--select` takes any CSS selector; by default it clips to the first `.iso-plate`. Each `--times` delay counts from the first shot, so `1200,2400,3600` shoots at about 1.2, 2.4 and 3.6 s after it (a capture takes 60–200 ms, so delays closer together than that run late), saved as `name-<ms>.png`. `--key` sends the same key codes as `drive.mjs` (`7` as `Digit7`, `.` as `Period`; write a comma as `Comma`, since the list is comma separated). The other options are `--height` (1000), `--scale` (2), `--wait` (2500 ms before the first shot), `--zoom-scale` (4) and `--theme dark|light`. Read every PNG you make: open it and look.
 

@@ -1,5 +1,7 @@
 # Contributing to Anatomy
 
+This local-only fork follows the security contract in SECURITY.md. Do not restore publishing/session-log capabilities, disable browser sandboxing, or allow external/adjacent-file loads in automated previews. Browser fixtures must inline assets. Security code may include comments when they clarify the trust boundary.
+
 Thank you for helping. Anatomy is judged by how its figures look at 4× zoom, so most of this guide is about checking your work before anyone else does.
 
 By taking part you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
@@ -13,7 +15,7 @@ You need:
 - **Claude Code**, Antigravity, OpenCode, Codex or MiniMax Code, to try the skill itself.
 
 ```sh
-git clone https://github.com/wheresryan22/anatomy.git
+git clone https://github.com/godzi/anatomy.git
 cd anatomy
 ```
 

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdtemp, rm, writeFile, mkdir, copyFile } from "node:fs/promises";
@@ -22,7 +23,7 @@ window.advance=()=>{for(const mode of modes)flushSync(()=>roots[mode].render(Rea
 window.repeat=async()=>{const node=document.querySelector('#healthy [data-readout]');let writes=0;const observer=new MutationObserver(records=>writes+=records.length);observer.observe(node,{childList:true});sayers.healthy('reading 2');sayers.healthy('reading 2');await Promise.resolve();observer.disconnect();return writes};`;
   await build({ stdin: { contents: entry, resolveDir: process.cwd(), loader: "jsx" }, bundle: true, outfile: join(directory, "fixture.js"), platform: "browser", nodePaths, alias });
   const page = join(directory, "fixture.html");
-  await writeFile(page, '<!doctype html><style>body{font:18px system-ui;background:#f5f5f5;color:#222;padding:24px}body[data-theme="dark"]{background:#161616;color:#eee}.iso-plate{padding:16px;border:1px solid #888;margin:10px;display:inline-block;min-width:170px}h2{font-size:16px}[data-readout]{font:24px monospace}</style><h1>React readout after target replacement</h1><p>Expected: reading 2 in every card except same, which must show reading 1.</p><div id="readout"></div><div id="same"></div><div id="anchor"></div><div id="late"></div><div id="healthy"></div><script src="fixture.js"></script>');
+  await writeFile(page, '<!doctype html><style>body{font:18px system-ui;background:#f5f5f5;color:#222;padding:24px}body[data-theme="dark"]{background:#161616;color:#eee}.iso-plate{padding:16px;border:1px solid #888;margin:10px;display:inline-block;min-width:170px}h2{font-size:16px}[data-readout]{font:24px monospace}</style><h1>React readout after target replacement</h1><p>Expected: reading 2 in every card except same, which must show reading 1.</p><div id="readout"></div><div id="same"></div><div id="anchor"></div><div id="late"></div><div id="healthy"></div><script>' + readFileSync(join(directory, 'fixture.js'), 'utf8') + '</script>');
   const actions = [["eval", "window.advance()"], ["eval", "window.repeat()"]];
   if (process.env.ANATOMY_PROOF_DIR) {
     await mkdir(process.env.ANATOMY_PROOF_DIR, {recursive:true});

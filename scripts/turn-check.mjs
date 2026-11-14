@@ -1,3 +1,4 @@
+import { chromeArgs, serveLocalPage, restrictPage } from "./local-browser.mjs";
 import { chromePort } from "./chrome-port.mjs";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -53,56 +54,67 @@ function chromePath() {
 }
 
 async function browser(target, { width, height, scale, throttle, noWebgl }) {
+  const local = await serveLocalPage(target);
+  const url = local.url;
   const binary = chromePath();
   if (!binary) {
+    local.close();
     console.error("No Chrome found. Set CHROME_PATH to a Chrome or Chromium binary.");
     process.exit(1);
   }
   const profile = mkdtempSync(join(tmpdir(), "turn-check-"));
-  const chrome = spawn(binary, ["--headless=new", ...(process.platform === "linux" ? ["--no-sandbox"] : []), ...(process.platform === "win32" ? ["--do-not-de-elevate"] : []), "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", "--hide-scrollbars", "--allow-file-access-from-files", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", "about:blank"]);
-  const port = await chromePort(chrome, profile);
-  const page = await (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: "PUT" })).json();
-  const socket = new WebSocket(page.webSocketDebuggerUrl);
-  let id = 0;
-  const pending = new Map();
-  const problems = [];
-  socket.onmessage = (message) => {
-    const data = JSON.parse(message.data);
-    if (data.id && pending.has(data.id)) {
-      pending.get(data.id)(data);
-      pending.delete(data.id);
-    } else if (data.method === "Runtime.consoleAPICalled" && (data.params.type === "error" || data.params.type === "warning")) problems.push(`console.${data.params.type}: ${data.params.args.map((arg) => arg.value ?? arg.description ?? "").join(" ").slice(0, 400)}`);
-    else if (data.method === "Runtime.exceptionThrown") problems.push(`exception: ${data.params.exceptionDetails.exception?.description ?? data.params.exceptionDetails.text}`.slice(0, 400));
-  };
-  await new Promise((done) => (socket.onopen = done));
-  const send = (method, params = {}) =>
-    new Promise((done) => {
-      const call = ++id;
-      pending.set(call, done);
-      socket.send(JSON.stringify({ id: call, method, params }));
-    });
-  const evaluate = async (expression) => {
-    const result = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
-    if (result.result?.exceptionDetails) throw new Error(JSON.stringify(result.result.exceptionDetails).slice(0, 800));
-    return result.result?.result?.value;
-  };
-  await send("Runtime.enable");
-  await send("Page.enable");
-  const NO_GL = `(()=>{const get=HTMLCanvasElement.prototype.getContext;HTMLCanvasElement.prototype.getContext=function(kind,...rest){if(/webgl/.test(String(kind))&&!this.dataset.check)return null;return get.call(this,kind,...rest)}})();`;
-  if (noWebgl) await send("Page.addScriptToEvaluateOnNewDocument", { source: NO_GL });
-  await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: scale, mobile: width < 600 });
-  if (throttle > 1) await send("Emulation.setCPUThrottlingRate", { rate: throttle });
-  const url = /^https?:|^file:/.test(target) ? target : pathToFileURL(resolve(target)).href;
-  await send("Page.navigate", { url });
-  await new Promise((done) => setTimeout(done, 1500));
+  const chrome = spawn(binary, chromeArgs(profile));
+  chrome.once("exit", () => local.close());
+  let socket;
   const close = () => {
-    socket.close();
+    socket?.close();
     chrome.kill("SIGKILL");
+    local.close();
     try {
       rmSync(profile, { recursive: true, force: true });
     } catch {}
   };
-  return { send, evaluate, close, problems };
+  try {
+    const port = await chromePort(chrome, profile).catch((error) => { local.close(); throw error; });
+    const page = await (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: "PUT" })).json();
+    socket = new WebSocket(page.webSocketDebuggerUrl);
+    let id = 0;
+    const pending = new Map();
+    const problems = [];
+    let policyEvent = async () => {};
+    socket.onmessage = (message) => {
+      const data = JSON.parse(message.data);
+      policyEvent(data).catch((error) => { console.error(error.message); close(); process.exit(1); });
+      if (data.id && pending.has(data.id)) {
+        pending.get(data.id)(data);
+        pending.delete(data.id);
+      } else if (data.method === "Runtime.consoleAPICalled" && (data.params.type === "error" || data.params.type === "warning")) problems.push(`console.${data.params.type}: ${data.params.args.map((arg) => arg.value ?? arg.description ?? "").join(" ").slice(0, 400)}`);
+      else if (data.method === "Runtime.exceptionThrown") problems.push(`exception: ${data.params.exceptionDetails.exception?.description ?? data.params.exceptionDetails.text}`.slice(0, 400));
+    };
+    await new Promise((done) => (socket.onopen = done));
+    const send = (method, params = {}) =>
+      new Promise((done, fail) => {
+        const call = ++id;
+        const timer = setTimeout(() => { pending.delete(call); fail(new Error(`Chrome did not answer ${method}`)); }, 60000);
+        pending.set(call, value => { clearTimeout(timer); done(value); });
+        socket.send(JSON.stringify({ id: call, method, params }));
+      });
+    const evaluate = async (expression) => {
+      const result = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
+      if (result.result?.exceptionDetails) throw new Error(JSON.stringify(result.result.exceptionDetails).slice(0, 800));
+      return result.result?.result?.value;
+    };
+    await send("Runtime.enable");
+    await send("Page.enable");
+    await restrictPage(send, (handler) => { policyEvent = handler; }, url);
+    const NO_GL = `(()=>{const get=HTMLCanvasElement.prototype.getContext;HTMLCanvasElement.prototype.getContext=function(kind,...rest){if(/webgl/.test(String(kind))&&!this.dataset.check)return null;return get.call(this,kind,...rest)}})();`;
+    if (noWebgl) await send("Page.addScriptToEvaluateOnNewDocument", { source: NO_GL });
+    await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: scale, mobile: width < 600 });
+    if (throttle > 1) await send("Emulation.setCPUThrottlingRate", { rate: throttle });
+    await send("Page.navigate", { url });
+    await new Promise((done) => setTimeout(done, 1500));
+    return { send, evaluate, close, problems };
+  } catch (error) { close(); throw error; }
 }
 
 const HELPERS = String.raw`(() => {
