@@ -1,3 +1,4 @@
+import { chromeArgs, serveLocalPage, restrictPage } from "./local-browser.mjs";
 import { chromePort } from "./chrome-port.mjs";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -53,21 +54,37 @@ function chromePath() {
 }
 
 async function browser(target, { width, height, scale, throttle, noWebgl }) {
+  const local = await serveLocalPage(target);
+  const url = local.url;
   const binary = chromePath();
   if (!binary) {
+    local.close();
     console.error("No Chrome found. Set CHROME_PATH to a Chrome or Chromium binary.");
     process.exit(1);
   }
   const profile = mkdtempSync(join(tmpdir(), "turn-check-"));
-  const chrome = spawn(binary, ["--headless=new", ...(process.platform === "linux" ? ["--no-sandbox"] : []), ...(process.platform === "win32" ? ["--do-not-de-elevate"] : []), "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", "--hide-scrollbars", "--allow-file-access-from-files", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", "about:blank"]);
-  const port = await chromePort(chrome, profile);
+  const chrome = spawn(binary, chromeArgs(profile));
+  chrome.once("exit", () => local.close());
+  let socket;
+  const close = () => {
+    socket?.close();
+    chrome.kill("SIGKILL");
+    local.close();
+    try {
+      rmSync(profile, { recursive: true, force: true });
+    } catch {}
+  };
+  try {
+  const port = await chromePort(chrome, profile).catch((error) => { local.close(); throw error; });
   const page = await (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: "PUT" })).json();
-  const socket = new WebSocket(page.webSocketDebuggerUrl);
+  socket = new WebSocket(page.webSocketDebuggerUrl);
   let id = 0;
   const pending = new Map();
   const problems = [];
+  let policyEvent = async () => {};
   socket.onmessage = (message) => {
     const data = JSON.parse(message.data);
+    policyEvent(data).catch((error) => { console.error(error.message); chrome.kill("SIGKILL"); local.close(); process.exit(1); });
     if (data.id && pending.has(data.id)) {
       pending.get(data.id)(data);
       pending.delete(data.id);
@@ -76,9 +93,10 @@ async function browser(target, { width, height, scale, throttle, noWebgl }) {
   };
   await new Promise((done) => (socket.onopen = done));
   const send = (method, params = {}) =>
-    new Promise((done) => {
+    new Promise((done, fail) => {
       const call = ++id;
-      pending.set(call, done);
+      const timer = setTimeout(() => { pending.delete(call); fail(new Error(`Chrome did not answer ${method}`)); }, 60000);
+      pending.set(call, value => { clearTimeout(timer); done(value); });
       socket.send(JSON.stringify({ id: call, method, params }));
     });
   const evaluate = async (expression) => {
@@ -88,21 +106,15 @@ async function browser(target, { width, height, scale, throttle, noWebgl }) {
   };
   await send("Runtime.enable");
   await send("Page.enable");
+  await restrictPage(send, (handler) => { policyEvent = handler; }, url);
   const NO_GL = `(()=>{const get=HTMLCanvasElement.prototype.getContext;HTMLCanvasElement.prototype.getContext=function(kind,...rest){if(/webgl/.test(String(kind))&&!this.dataset.check)return null;return get.call(this,kind,...rest)}})();`;
   if (noWebgl) await send("Page.addScriptToEvaluateOnNewDocument", { source: NO_GL });
   await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: scale, mobile: width < 600 });
   if (throttle > 1) await send("Emulation.setCPUThrottlingRate", { rate: throttle });
-  const url = /^https?:|^file:/.test(target) ? target : pathToFileURL(resolve(target)).href;
   await send("Page.navigate", { url });
   await new Promise((done) => setTimeout(done, 1500));
-  const close = () => {
-    socket.close();
-    chrome.kill("SIGKILL");
-    try {
-      rmSync(profile, { recursive: true, force: true });
-    } catch {}
-  };
   return { send, evaluate, close, problems };
+  } catch (error) { close(); throw error; }
 }
 
 const HELPERS = String.raw`(() => {

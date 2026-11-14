@@ -1,3 +1,10 @@
+# Local Codex security fork
+
+- Removed automatic publication and session-log access.
+- Retained Chrome sandboxing; added a one-page loopback server, restrictive CSP, CDP request filtering and download denial.
+- Routed PDF printing through the same restricted browser driver.
+- Added security regression tests and documented intentional compatibility limits.
+
 # Changelog
 
 All notable changes to Anatomy are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html); entries from before the first release are dated.

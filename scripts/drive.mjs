@@ -1,3 +1,4 @@
+import { chromeArgs, serveLocalPage, restrictPage } from "./local-browser.mjs";
 import { chromePort } from "./chrome-port.mjs";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -16,8 +17,8 @@ if (typeof WebSocket === "undefined" && !process.execArgv.includes("--experiment
 function usage() {
   console.log(`Drive a figure in headless Chrome: move, click, type, wait, screenshot, and build contact sheets.
 
-  node drive.mjs <file.html | url> '<actions as JSON>' [--width 1440] [--height 1100] [--scale 1] [--reduced] [--theme dark|light] [--no-webgl] [--preload file.js]
-  node drive.mjs <file.html | url> --actions steps.json
+  node drive.mjs <file.html> '<actions as JSON>' [--width 1440] [--height 1100] [--scale 1] [--reduced] [--theme dark|light] [--no-webgl] [--preload file.js]
+  node drive.mjs <file.html> --actions steps.json
 
   --reduced     emulate prefers-reduced-motion: reduce
   --theme t     emulate prefers-color-scheme: dark or light (only pages that read the media query follow it)
@@ -41,6 +42,7 @@ Fractions are 0..1 across the element.
                                           time (0.05 = 20x slow motion) so sheets catch 100 ms events; ["slow", 1] restores it
   ["until", js, timeoutMs?]               poll a JS expression until it is truthy (default 10 s); a timeout stops the run with exit 1
   ["eval", js]                            run JS in the page and print the result
+  ["pdf", out.pdf]                        print using the page CSS and background colours
   ["shot", out.png, sel?, scale?, [x,y,w,h]?]           screenshot an element, or a region of it in CSS px
   ["lines", out.png?, sel?, options?]     check every texture line's two ends: each must land on a stroke, a dot or an outline
                                           (within options.tolerance, 1 viewBox px), or hide under a fill painted later; a short
@@ -112,7 +114,7 @@ async function main() {
   }
   const [target, script] = rest;
   const actions = options.actions ?? JSON.parse(script ?? "[]");
-  const kinds = new Set(["scroll", "wait", "move", "click", "drag", "key", "slow", "until", "eval", "shot", "lines", "turn", "orbit", "sheet"]);
+  const kinds = new Set(["scroll", "wait", "move", "click", "drag", "key", "slow", "until", "eval", "shot", "pdf", "lines", "turn", "orbit", "sheet"]);
   if (!Array.isArray(actions)) throw new Error("actions must be an array");
   for (const action of actions) {
     if (!Array.isArray(action) || !kinds.has(action[0])) throw new Error(`unknown action ${Array.isArray(action) ? action[0] : action}`);
@@ -125,17 +127,21 @@ async function main() {
       if (!Number.isFinite(every) || every < 0 || !Number.isInteger(count) || count < 1) throw new Error(`sheet needs a non-negative every and a whole count of at least 1, got every ${every} and count ${count}`);
     }
   }
-  const url = /^https?:|^file:/.test(target) ? target : pathToFileURL(resolve(target)).href;
+  const local = await serveLocalPage(target);
+  const url = local.url;
   const binary = chromePath();
   if (!binary) {
+    local.close();
     console.error("No Chrome found. Set CHROME_PATH to a Chrome or Chromium binary.");
     process.exit(1);
   }
   const profile = mkdtempSync(join(tmpdir(), "iso-drive-"));
-  const chrome = spawn(binary, ["--headless=new", ...(process.platform === "linux" ? ["--no-sandbox"] : []), ...(process.platform === "win32" ? ["--do-not-de-elevate"] : []), "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", "--hide-scrollbars", "--allow-file-access-from-files", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", "about:blank"]);
-  const port = await chromePort(chrome, profile);
+  const chrome = spawn(binary, chromeArgs(profile));
+  chrome.once("exit", () => local.close());
+  const port = await chromePort(chrome, profile).catch((error) => { local.close(); throw error; });
   const finish = (code) => {
     chrome.kill("SIGKILL");
+    local.close();
     try {
       rmSync(profile, { recursive: true, force: true });
     } catch {}
@@ -148,8 +154,10 @@ async function main() {
     const pending = new Map();
     const problems = [];
     let loaded = () => {};
-    socket.onmessage = (message) => {
+    let policyEvent = async () => {};
+  socket.onmessage = (message) => {
       const data = JSON.parse(message.data);
+    policyEvent(data).catch((error) => { console.error(error.message); chrome.kill("SIGKILL"); local.close(); process.exit(1); });
       if (data.method === "Page.loadEventFired") loaded();
       if (data.id && pending.has(data.id)) {
         pending.get(data.id)(data);
@@ -185,6 +193,7 @@ async function main() {
     const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
     await send("Runtime.enable");
     await send("Page.enable");
+  await restrictPage(send, (handler) => { policyEvent = handler; }, url);
     const features = [];
     if (options.reduced) features.push({ name: "prefers-reduced-motion", value: "reduce" });
     if (options.theme) features.push({ name: "prefers-color-scheme", value: options.theme });
@@ -270,6 +279,13 @@ async function main() {
           await sleep(25);
         }
         if (!ok) throw new Error(`until: timed out waiting for ${args[0]}`);
+      }
+      else if (kind === "pdf") {
+        const reply = await send("Page.printToPDF", { printBackground: true, preferCSSPageSize: true });
+        if (reply.error || !reply.result?.data) throw new Error(reply.error?.message ?? "Chrome did not produce a PDF");
+        const output = resolve(args[0]);
+        mkdirSync(dirname(output), { recursive: true });
+        writeFileSync(output, Buffer.from(reply.result.data, "base64"));
       }
       else if (kind === "shot") {
         const [out, selector, scale, region] = args;

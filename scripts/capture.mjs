@@ -1,3 +1,4 @@
+import { chromeArgs, serveLocalPage, restrictPage } from "./local-browser.mjs";
 import { chromePort } from "./chrome-port.mjs";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -15,7 +16,7 @@ if (typeof WebSocket === "undefined" && !process.execArgv.includes("--experiment
 function usage() {
   console.log(`Capture a figure with headless Chrome.
 
-  node capture.mjs <file.html | file.svg | url> [options]
+  node capture.mjs <file.html | file.svg> [options]
 
   --out <png>         output path (default: capture.png in the current directory)
   --width <px>        viewport width (default 1440; use 390 for a phone)
@@ -115,29 +116,22 @@ async function main() {
     console.error(`capture: ${problem}`);
     process.exit(1);
   }
-  const url = /^https?:|^file:/.test(options.target) ? options.target : pathToFileURL(resolve(options.target)).href;
+  const local = await serveLocalPage(options.target);
+  const url = local.url;
   const out = resolve(options.out ?? "capture.png");
   const binary = chromePath();
   if (!binary) {
+    local.close();
     console.error("No Chrome found. Set CHROME_PATH to a Chrome or Chromium binary.");
     process.exit(1);
   }
   const profile = mkdtempSync(join(tmpdir(), "iso-capture-"));
-  const chrome = spawn(binary, [
-    "--headless=new", ...(process.platform === "linux" ? ["--no-sandbox"] : []), ...(process.platform === "win32" ? ["--do-not-de-elevate"] : []),
-    "--remote-debugging-port=0",
-    `--user-data-dir=${profile}`,
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--hide-scrollbars",
-    "--allow-file-access-from-files",
-    "--enable-unsafe-swiftshader",
-    "--ignore-gpu-blocklist",
-    "about:blank",
-  ]);
-  const port = await chromePort(chrome, profile);
+  const chrome = spawn(binary, chromeArgs(profile));
+  chrome.once("exit", () => local.close());
+  const port = await chromePort(chrome, profile).catch((error) => { local.close(); throw error; });
   const finish = (code) => {
     chrome.kill("SIGKILL");
+    local.close();
     try {
       rmSync(profile, { recursive: true, force: true });
     } catch {}
@@ -150,8 +144,10 @@ async function main() {
     const pending = new Map();
     const problems = [];
     let loaded = () => {};
-    socket.onmessage = (message) => {
+    let policyEvent = async () => {};
+  socket.onmessage = (message) => {
       const data = JSON.parse(message.data);
+    policyEvent(data).catch((error) => { console.error(error.message); chrome.kill("SIGKILL"); local.close(); process.exit(1); });
       if (data.method === "Page.loadEventFired") loaded();
       if (data.id && pending.has(data.id)) {
         pending.get(data.id)(data);
@@ -181,6 +177,7 @@ async function main() {
     const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
     await send("Runtime.enable");
     await send("Page.enable");
+  await restrictPage(send, (handler) => { policyEvent = handler; }, url);
     const features = [];
     if (options.reduced) features.push({ name: "prefers-reduced-motion", value: "reduce" });
     if (options.theme) features.push({ name: "prefers-color-scheme", value: options.theme });

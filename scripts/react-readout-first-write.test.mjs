@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -17,7 +18,7 @@ try {
 const changes={};function Probe({mode}){const{anchor,say}=useReadout();useLayoutEffect(()=>{const node=anchor.current.closest('.iso-plate').querySelector('[data-readout]');const observer=new MutationObserver(records=>changes[mode]=(changes[mode]??0)+records.length);observer.observe(node,{childList:true});if(mode==='layout')say('layout');return()=>observer.disconnect();},[]);useEffect(()=>{if(mode==='empty')say('');if(mode==='healthy'||mode==='repeat')say(mode);setTimeout(()=>{if(mode==='layout')say('layout');if(mode==='repeat')say('repeat');},20);},[]);return React.createElement('div',{className:'iso-plate',id:mode},React.createElement('span',{'data-readout':true},'rest'),React.createElement('div',{ref:anchor}));}
 flushSync(()=>createRoot(document.getElementById('root')).render(React.createElement(React.Fragment,null,...['layout','empty','healthy','repeat'].map(mode=>React.createElement(Probe,{key:mode,mode})))));setTimeout(()=>{const values=Object.fromEntries(['layout','empty','healthy','repeat'].map(mode=>[mode,document.querySelector('#'+mode+' [data-readout]').textContent]));window.readoutObserved={values,changes};document.getElementById('results').textContent=JSON.stringify(window.readoutObserved);},100);`;
   await build({ stdin: { contents: entry, resolveDir: process.cwd(), loader: "jsx" }, bundle: true, outfile: join(directory, "fixture.js"), platform: "browser", nodePaths, alias });
-  writeFileSync(join(directory, "fixture.html"), '<!doctype html><html><body><div id="root"></div><pre id="results"></pre><script src="fixture.js"></script></body></html>');
+  writeFileSync(join(directory, "fixture.html"), '<!doctype html><html><body><div id="root"></div><pre id="results"></pre><script>' + readFileSync(join(directory, 'fixture.js'), 'utf8') + '</script></body></html>');
   const result = await promisify(execFile)(process.execPath, ["scripts/drive.mjs", join(directory, "fixture.html"), JSON.stringify([["eval", "({observed:window.readoutObserved,html:document.body.innerHTML})"]])], { timeout: 30000, maxBuffer: 16 * 1024 * 1024 });
   const payload = result.stdout.match(/eval: (.*)/);
   assert.ok(payload, "actual ReactDOM client must complete and publish its native DOM observations");

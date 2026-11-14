@@ -14,6 +14,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  local-security:
+    name: Local security policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: node --test scripts/local-browser.test.mjs scripts/chrome-startup.test.mjs
+
   examples:
     name: Rebuild the examples
     runs-on: macos-latest
